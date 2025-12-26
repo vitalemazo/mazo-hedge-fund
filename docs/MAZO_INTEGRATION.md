@@ -9,10 +9,11 @@ This document describes the integration between **AI Hedge Fund** and **Mazo**, 
 3. [Integration Architecture](#integration-architecture)
 4. [Integration Patterns](#integration-patterns)
 5. [Setup Guide](#setup-guide)
-6. [API Bridge](#api-bridge)
-7. [Unified Workflow](#unified-workflow)
-8. [Configuration](#configuration)
-9. [Usage Examples](#usage-examples)
+6. [Web UI Integration](#web-ui-integration)
+7. [API Bridge](#api-bridge)
+8. [Unified Workflow](#unified-workflow)
+9. [Configuration](#configuration)
+10. [Usage Examples](#usage-examples)
 
 ---
 
@@ -223,6 +224,134 @@ MAZO_PATH=./mazo
 MAZO_TIMEOUT=300
 DEFAULT_WORKFLOW_MODE=full
 DEFAULT_RESEARCH_DEPTH=standard
+```
+
+---
+
+## Web UI Integration
+
+The web application includes Mazo research capabilities directly in the interface.
+
+### Research Tab
+
+The bottom panel includes a **Research** tab where you can:
+
+- Ask natural language research questions
+- Analyze companies in depth
+- Compare multiple companies
+- Get real-time research with confidence scores
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  Output  │  Research                                            │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  Research Depth: [Standard ▼]     [Analyze] [Compare] [Clear]   │
+│                                                                  │
+│  ┌──────────────────────────────────────────────────────────┐   │
+│  │ You: What's driving NVDA's growth?                       │   │
+│  └──────────────────────────────────────────────────────────┘   │
+│                                                                  │
+│  ┌──────────────────────────────────────────────────────────┐   │
+│  │ Mazo: NVIDIA's growth is driven by several key factors:  │   │
+│  │ 1. AI/ML demand for GPUs...                              │   │
+│  │ 2. Data center expansion...                              │   │
+│  │ [85% confidence] [Sources: SEC filings, earnings calls]  │   │
+│  └──────────────────────────────────────────────────────────┘   │
+│                                                                  │
+│  [Ask a research question...]                          [Send]   │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Signal Explanation
+
+After running a workflow, each trading signal in the Output tab has an **Explain** button:
+
+| Ticker | Action | Quantity | Confidence | Research |
+|--------|--------|----------|------------|----------|
+| AAPL   | BUY    | 100      | 85%        | [Explain] |
+| MSFT   | HOLD   | 0        | 72%        | [Explain] |
+
+Clicking **Explain** will:
+1. Switch to the Research tab
+2. Send the signal details to Mazo
+3. Display a detailed explanation of why the signal was generated
+
+### Research Depth Options
+
+| Depth | Description | Use Case |
+|-------|-------------|----------|
+| Quick | Brief overview, key metrics | Fast decisions, screening |
+| Standard | Comprehensive analysis | Normal research |
+| Deep | Exhaustive research with scenarios | Due diligence |
+
+### Backend API Endpoints
+
+The web UI uses these REST endpoints:
+
+#### Core Research
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/mazo/research` | POST | Execute natural language research query |
+| `/mazo/research/stream` | POST | Streaming research with SSE events |
+| `/mazo/analyze` | POST | Comprehensive company analysis |
+| `/mazo/compare` | POST | Compare multiple companies |
+| `/mazo/explain-signal` | POST | Explain a trading signal |
+| `/mazo/pre-research` | POST | Pre-workflow context gathering |
+
+#### Templates & Batch Processing
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/mazo/templates` | GET | List available research templates |
+| `/mazo/research/template` | POST | Research using a predefined template |
+| `/mazo/batch` | POST | Batch analyze multiple tickers |
+
+#### Health
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/mazo/health` | GET | Service health check |
+
+### Available Research Templates
+
+| Template ID | Name | Use Case |
+|-------------|------|----------|
+| `fundamental_analysis` | Fundamental Analysis | Deep dive into financials |
+| `technical_analysis` | Technical Analysis | Chart patterns and price action |
+| `risk_assessment` | Risk Assessment | Identify risks and downsides |
+| `growth_catalyst` | Growth Catalysts | Upcoming events and catalysts |
+| `competitor_analysis` | Competitor Analysis | Compare against competitors |
+| `earnings_preview` | Earnings Preview | Pre-earnings analysis |
+| `sector_overview` | Sector Overview | Industry dynamics |
+| `quick_summary` | Quick Summary | Fast 2-minute overview |
+
+### Streaming Research (SSE)
+
+The `/mazo/research/stream` endpoint provides real-time progress updates:
+
+```typescript
+// Frontend usage example
+const controller = mazoApi.researchStream(
+  { query: "What's driving NVDA's growth?", depth: 'standard' },
+  (event) => {
+    switch (event.type) {
+      case 'start':
+        console.log('Research started');
+        break;
+      case 'progress':
+        console.log('Progress:', event.data.message);
+        break;
+      case 'complete':
+        console.log('Answer:', event.data.answer);
+        break;
+      case 'error':
+        console.error('Error:', event.data.message);
+        break;
+    }
+  }
+);
+
+// Cancel stream if needed
+controller.abort();
 ```
 
 ---

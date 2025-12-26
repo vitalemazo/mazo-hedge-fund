@@ -8,8 +8,18 @@ The AI Hedge Fund app is a complete system with both frontend and backend compon
 
 The AI Hedge Fund consists of:
 
-- **Backend**: A FastAPI application that provides a REST API to run the hedge fund trading system and backtester
+- **Backend**: A FastAPI application that provides a REST API to run the hedge fund trading system, backtester, and Mazo research
 - **Frontend**: A React/Vite application that offers a user-friendly interface to visualize and control the hedge fund operations
+- **Mazo Integration**: Built-in research capabilities powered by the Mazo autonomous research agent
+
+### Key Features
+
+- **Visual Workflow Builder**: Drag-and-drop interface to build trading analysis pipelines
+- **18 Trading Agents**: Simulated legendary investors (Buffett, Burry, Damodaran, etc.)
+- **Real-time Progress**: Watch agents analyze stocks in real-time
+- **Mazo Research Tab**: Ask natural language research questions, get AI-powered analysis
+- **Signal Explanation**: Click "Explain" on any trading signal to get Mazo's detailed analysis
+- **Backtesting**: Test strategies over historical data
 
 ## Table of Contents
 

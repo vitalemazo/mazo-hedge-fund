@@ -1,7 +1,11 @@
+import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { useLayoutContext } from '@/contexts/layout-context';
+import { useResearch } from '@/contexts/research-context';
 import { cn } from '@/lib/utils';
+import { Search } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { getActionColor, getDisplayName, getSignalColor, getStatusIcon } from './output-tab-utils';
 import { ReasoningContent } from './reasoning-content';
@@ -47,6 +51,22 @@ function ProgressSection({ sortedAgents }: { sortedAgents: [string, any][] }) {
 
 // Summary Section Component
 function SummarySection({ outputData }: { outputData: any }) {
+  const { explainSignal, state: researchState } = useResearch();
+  const { setBottomPanelTab } = useLayoutContext();
+
+  const handleExplainSignal = async (ticker: string, decision: any) => {
+    // Switch to Research tab to show the explanation
+    setBottomPanelTab('research');
+
+    // Request explanation from Mazo
+    await explainSignal(
+      ticker,
+      decision.action || 'HOLD',
+      decision.confidence || 0,
+      decision.reasoning || 'No reasoning provided'
+    );
+  };
+
   if (!outputData) return null;
 
   return (
@@ -62,6 +82,7 @@ function SummarySection({ outputData }: { outputData: any }) {
               <TableHead>Action</TableHead>
               <TableHead>Quantity</TableHead>
               <TableHead>Confidence</TableHead>
+              <TableHead className="w-24">Research</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -75,6 +96,19 @@ function SummarySection({ outputData }: { outputData: any }) {
                 </TableCell>
                 <TableCell>{decision.quantity || 0}</TableCell>
                 <TableCell>{decision.confidence?.toFixed(1) || 0}%</TableCell>
+                <TableCell>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleExplainSignal(ticker, decision)}
+                    disabled={researchState.isLoading}
+                    title="Explain signal with Mazo"
+                    className="h-7 px-2"
+                  >
+                    <Search size={14} className="mr-1" />
+                    Explain
+                  </Button>
+                </TableCell>
               </TableRow>
             ))}
           </TableBody>
