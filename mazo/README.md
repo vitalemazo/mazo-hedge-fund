@@ -1,0 +1,131 @@
+# Mazo
+
+Mazo is an autonomous financial research agent that thinks, plans, and learns as it works. It performs analysis using task planning, self-reflection, and real-time market data. Think Claude Code, but built specifically for financial research.
+
+
+## Overview
+
+Mazo takes complex financial questions and turns them into clear, step-by-step research plans. It runs those tasks using live market data, checks its own work, and refines the results until it has a confident, data-backed answer.
+
+**Key Capabilities:**
+- **Intelligent Task Planning**: Automatically decomposes complex queries into structured research steps
+- **Autonomous Execution**: Selects and executes the right tools to gather financial data
+- **Self-Validation**: Checks its own work and iterates until tasks are complete
+- **Real-Time Financial Data**: Access to income statements, balance sheets, and cash flow statements
+- **Safety Features**: Built-in loop detection and step limits to prevent runaway execution
+
+### Prerequisites
+
+- [Bun](https://bun.com) runtime (v1.0 or higher)
+- OpenAI API key (get [here](https://platform.openai.com/api-keys))
+- Financial Datasets API key (get [here](https://financialdatasets.ai))
+- Tavily API key (get [here](https://tavily.com)) - optional, for web search
+
+#### Installing Bun
+
+If you don't have Bun installed, you can install it using curl:
+
+**macOS/Linux:**
+```bash
+curl -fsSL https://bun.com/install | bash
+```
+
+**Windows:**
+```bash
+powershell -c "irm bun.sh/install.ps1|iex"
+```
+
+After installation, restart your terminal and verify Bun is installed:
+```bash
+bun --version
+```
+
+### Installing Mazo
+
+1. Navigate to the mazo directory:
+```bash
+cd mazo
+```
+
+2. Install dependencies with Bun:
+```bash
+bun install
+```
+
+3. Set up your environment variables:
+```bash
+# The .env file is shared with the parent project
+# Make sure these keys are set:
+# OPENAI_API_KEY=your-openai-api-key
+# FINANCIAL_DATASETS_API_KEY=your-financial-datasets-api-key
+# TAVILY_API_KEY=your-tavily-api-key
+```
+
+### Usage
+
+Run Mazo in interactive mode:
+```bash
+bun start
+```
+
+Or with watch mode for development:
+```bash
+bun dev
+```
+
+### Example Queries
+
+Try asking Mazo questions like:
+- "What was Apple's revenue growth over the last 4 quarters?"
+- "Compare Microsoft and Google's operating margins for 2023"
+- "Analyze Tesla's cash flow trends over the past year"
+- "What is Amazon's debt-to-equity ratio based on recent financials?"
+
+Mazo will automatically:
+1. Break down your question into research tasks
+2. Fetch the necessary financial data
+3. Perform calculations and analysis
+4. Provide a comprehensive, data-rich answer
+
+## Architecture
+
+Mazo uses a multi-agent architecture with specialized components:
+
+- **Planning Agent**: Analyzes queries and creates structured task lists
+- **Action Agent**: Selects appropriate tools and executes research steps
+- **Validation Agent**: Verifies task completion and data sufficiency
+- **Answer Agent**: Synthesizes findings into comprehensive responses
+
+## Tech Stack
+
+- **Runtime**: [Bun](https://bun.sh)
+- **UI Framework**: [React](https://react.dev) + [Ink](https://github.com/vadimdemedes/ink) (terminal UI)
+- **LLM Integration**: [LangChain.js](https://js.langchain.com) with multi-provider support (OpenAI, Anthropic, Google)
+- **Schema Validation**: [Zod](https://zod.dev)
+- **Language**: TypeScript
+
+
+### Changing Models
+
+Type `/model` in the CLI to switch between:
+- GPT 4.1 (OpenAI)
+- Claude Sonnet 4.5 (Anthropic)
+- Gemini 3 (Google)
+
+## Integration with AI Hedge Fund
+
+Mazo is designed to work seamlessly with the AI Hedge Fund trading system:
+
+- **Pre-Signal Research**: Gather context before AI Hedge Fund generates signals
+- **Post-Signal Explanation**: Deep dive into why signals were generated
+- **Agent-Specific Context**: Provide tailored research for each investor persona
+
+See the parent project's `integration/` directory for bridge code.
+
+## License
+
+This project is licensed under the MIT License.
+
+## Author
+
+Vitale Mazo
