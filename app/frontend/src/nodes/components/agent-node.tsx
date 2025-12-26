@@ -37,24 +37,26 @@ export function AgentNode({
   const isInProgress = status === 'IN_PROGRESS';
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   
-  // Use persistent state hooks
-  const [availableModels, setAvailableModels] = useNodeState<LanguageModel[]>(id, 'availableModels', []);
+  // Available models are global (same across all flows), so use regular useState
+  const [availableModels, setAvailableModels] = useState<LanguageModel[]>([]);
+  // Selected model is per-flow, so use persistent state
   const [selectedModel, setSelectedModel] = useNodeState<LanguageModel | null>(id, 'selectedModel', null);
 
-  // Load models on mount
+  // Load models on mount and when flow changes
   useEffect(() => {
     const loadModels = async () => {
       try {
         const models = await getModels();
-        setAvailableModels(models);
+        if (models && models.length > 0) {
+          setAvailableModels(models);
+        }
       } catch (error) {
         console.error('Failed to load models:', error);
-        // Keep empty array as fallback
       }
     };
-    
+
     loadModels();
-  }, [setAvailableModels]);
+  }, [currentFlowId]); // Re-fetch when flow changes
 
   // Update the node context when the model changes
   useEffect(() => {

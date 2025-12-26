@@ -3,7 +3,7 @@ import { api } from '@/services/api';
 export interface LanguageModel {
   display_name: string;
   model_name: string;
-  provider: "Anthropic" | "DeepSeek" | "Google" | "Groq" | "OpenAI";
+  provider: string;
 }
 
 // Cache for models to avoid repeated API calls
@@ -13,17 +13,20 @@ let languageModels: LanguageModel[] | null = null;
  * Get the list of models from the backend API
  * Uses caching to avoid repeated API calls
  */
-export const getModels = async (): Promise<LanguageModel[]> => {
-  if (languageModels) {
+export const getModels = async (forceRefresh = false): Promise<LanguageModel[]> => {
+  if (languageModels && languageModels.length > 0 && !forceRefresh) {
     return languageModels;
   }
-  
+
   try {
-    languageModels = await api.getLanguageModels();
-    return languageModels;
+    const models = await api.getLanguageModels();
+    if (models && models.length > 0) {
+      languageModels = models;
+    }
+    return languageModels || [];
   } catch (error) {
     console.error('Failed to fetch models:', error);
-    throw error; // Let the calling component handle the error
+    return []; // Return empty array instead of throwing to prevent UI crashes
   }
 };
 
