@@ -1,13 +1,25 @@
 import { existsSync, readFileSync, writeFileSync } from 'fs';
 import { config } from 'dotenv';
+import { resolve, dirname } from 'path';
+import { fileURLToPath } from 'url';
 
-// Load .env on module import
+// Load .env on module import - try parent directory first (shared with ai-hedge-fund)
+const __dirname = dirname(fileURLToPath(import.meta.url));
+config({ path: resolve(__dirname, '../../../.env'), quiet: true });
+// Also try loading from current directory as fallback
 config({ quiet: true });
+
+// Check if we're using a proxy - all models route through OpenAI API when proxy is set
+function isUsingProxy(): boolean {
+  return !!process.env.OPENAI_API_BASE;
+}
 
 // Map model IDs to their required API key environment variable names
 const MODEL_API_KEY_MAP: Record<string, string> = {
   'gpt-5.2': 'OPENAI_API_KEY',
-  'claude-sonnet-4-5': 'ANTHROPIC_API_KEY',
+  'gpt-5-mini': 'OPENAI_API_KEY',
+  'claude-sonnet-4-5': 'OPENAI_API_KEY', // Uses proxy
+  'claude-sonnet-4-5-20250929': 'OPENAI_API_KEY', // Uses proxy
   'gemini-3': 'GOOGLE_API_KEY',
 };
 
@@ -19,7 +31,32 @@ const API_KEY_PROVIDER_NAMES: Record<string, string> = {
 };
 
 export function getApiKeyName(modelId: string): string | undefined {
-  return MODEL_API_KEY_MAP[modelId];
+  // When using a proxy, all models use OPENAI_API_KEY
+  if (isUsingProxy()) {
+    return 'OPENAI_API_KEY';
+  }
+
+  // Check exact match first
+  if (MODEL_API_KEY_MAP[modelId]) {
+    return MODEL_API_KEY_MAP[modelId];
+  }
+
+  // Check prefix match for Claude models
+  if (modelId.startsWith('claude-')) {
+    return 'ANTHROPIC_API_KEY';
+  }
+
+  // Check prefix match for GPT models
+  if (modelId.startsWith('gpt-')) {
+    return 'OPENAI_API_KEY';
+  }
+
+  // Check prefix match for Gemini models
+  if (modelId.startsWith('gemini-')) {
+    return 'GOOGLE_API_KEY';
+  }
+
+  return undefined;
 }
 
 export function checkApiKeyExists(apiKeyName: string): boolean {
