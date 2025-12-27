@@ -17,51 +17,89 @@ Mazo takes complex financial questions and turns them into clear, step-by-step r
 ### Prerequisites
 
 - [Bun](https://bun.com) runtime (v1.0 or higher)
-- OpenAI API key (get [here](https://platform.openai.com/api-keys))
+- OpenAI-compatible API proxy (recommended) OR direct provider API keys
 - Financial Datasets API key (get [here](https://financialdatasets.ai))
 - Tavily API key (get [here](https://tavily.com)) - optional, for web search
 
-### API Keys Explained
+### API Configuration
 
 Mazo uses multiple APIs that serve different purposes:
 
 | API | Purpose | Required |
 |-----|---------|----------|
-| **OpenAI** | LLM reasoning and analysis - the "brain" that thinks through research | Yes |
-| **Tavily** | Real-time web search for current news, events, and market data | Optional |
+| **LLM Proxy** | Routes all LLM requests (Claude, GPT, etc.) through a single endpoint | Yes (recommended) |
 | **Financial Datasets** | Structured financial data (income statements, balance sheets, etc.) | Yes |
+| **Tavily** | Real-time web search for current news, events, and market data | Optional |
 
 **How they work together:**
-1. You ask a question like "Research Apple"
-2. Mazo uses **Tavily** to search the web for current Apple news, analyst reports, etc.
-3. Mazo uses **Financial Datasets** to fetch structured financial statements
-4. Mazo sends all this context to the **LLM (OpenAI)** for analysis and reasoning
+1. You ask a question like "Compare Microsoft and Google's operating margins"
+2. Mazo uses **Financial Datasets** to fetch structured financial statements
+3. Mazo uses **Tavily** (if configured) to search for current news and context
+4. Mazo sends all this context to the **LLM** (via proxy) for analysis and reasoning
 5. The LLM synthesizes the data into a comprehensive research report
 
-**Using an OpenAI-compatible proxy:**
+## LLM Proxy Configuration (Recommended)
 
-Mazo supports routing all LLM requests through an OpenAI-compatible proxy. This is the recommended setup when using the AI Hedge Fund project, as it shares the same configuration.
+Mazo is designed to work with an OpenAI-compatible proxy API. This is the **recommended setup** as it:
+- Provides unified access to multiple LLM providers (Claude, GPT, Gemini, etc.)
+- Requires only a single API key for all models
+- Enables cost tracking and rate limiting
+- Works seamlessly with the AI Hedge Fund project
+
+### Setting Up the Proxy
+
+Add these to your `.env` file (in the parent directory):
 
 ```bash
-OPENAI_API_BASE=https://your-proxy.com/v1
+# LLM Proxy Configuration
 OPENAI_API_KEY=your-proxy-api-key
+OPENAI_API_BASE=https://your-proxy.com/v1
 ```
 
-This is useful for:
-- Cost tracking and rate limiting
-- Using alternative LLM providers with OpenAI-compatible APIs (e.g., Claude via proxy)
-- Enterprise deployments with custom endpoints
+**Example with a proxy service:**
+```bash
+OPENAI_API_KEY=sk-your-proxy-key
+OPENAI_API_BASE=https://api.your-proxy-service.com/v1
+```
 
-**How the proxy routing works:**
+### How Proxy Routing Works
 
-When `OPENAI_API_BASE` is set in your environment:
-1. **All models route through the proxy** - including Claude, GPT, and other models
-2. **Only `OPENAI_API_KEY` is required** - you don't need separate Anthropic/Google API keys
-3. **The proxy handles model selection** - the model name (e.g., `claude-sonnet-4-5-20250929`) is passed to the proxy which routes to the correct provider
+When `OPENAI_API_BASE` is set:
 
-This means you can use Claude Sonnet 4.5 as your default model while routing through an OpenAI-compatible proxy service.
+1. **All models route through the proxy** - Claude, GPT, Gemini, and other models all use the same endpoint
+2. **Single API key** - Only `OPENAI_API_KEY` is needed (no separate Anthropic/Google keys)
+3. **Model passthrough** - The model name (e.g., `claude-sonnet-4-5-20250929`) is passed directly to the proxy
+4. **Provider routing** - The proxy service handles routing to the correct LLM provider
 
-Note: The proxy only handles LLM calls. Tavily and Financial Datasets APIs are called directly with their own API keys.
+**Default model:** Claude Sonnet 4.5 (`claude-sonnet-4-5-20250929`)
+
+### Schema Validation Warnings
+
+When using a proxy, you may see schema validation warnings like:
+```
+Schema validation warning: Invalid option: expected one of "ticker"|"date"|...
+```
+
+**These warnings are normal and can be safely ignored.** They occur because:
+- Proxies don't support OpenAI's native structured output format
+- Mazo uses JSON prompting as a fallback
+- The LLM occasionally returns slightly different values than the strict schema expects
+- The code handles this gracefully and continues working
+
+Your queries will still complete successfully despite these warnings.
+
+### Direct API Access (Alternative)
+
+If you prefer not to use a proxy, you can configure direct API access:
+
+```bash
+# Direct provider keys (no proxy)
+ANTHROPIC_API_KEY=your-anthropic-api-key  # For Claude models
+OPENAI_API_KEY=your-openai-api-key        # For GPT models
+GOOGLE_API_KEY=your-google-api-key        # For Gemini models
+```
+
+Note: Without a proxy, each provider requires its own API key, and you cannot mix providers through a single endpoint.
 
 #### Installing Bun
 
@@ -96,29 +134,20 @@ bun install
 
 3. Set up your environment variables:
 
-Mazo automatically loads the `.env` file from the parent AI Hedge Fund project directory. This means both projects share the same API configuration.
+Mazo automatically loads the `.env` file from the parent AI Hedge Fund project directory. See [LLM Proxy Configuration](#llm-proxy-configuration-recommended) above for details.
 
-**Required environment variables** (in the parent `.env` file):
+**Minimum required variables** (in the parent `.env` file):
 
 ```bash
-# LLM Configuration (proxy setup - recommended)
+# LLM (via proxy - recommended)
 OPENAI_API_KEY=your-proxy-api-key
 OPENAI_API_BASE=https://your-proxy.com/v1
 
-# Financial Data
+# Financial Data (required)
 FINANCIAL_DATASETS_API_KEY=your-financial-datasets-api-key
 
 # Web Search (optional)
 TAVILY_API_KEY=your-tavily-api-key
-```
-
-**Alternative: Direct API access** (without proxy):
-
-```bash
-# Use provider-specific keys directly
-ANTHROPIC_API_KEY=your-anthropic-api-key  # For Claude models
-OPENAI_API_KEY=your-openai-api-key        # For GPT models
-GOOGLE_API_KEY=your-google-api-key        # For Gemini models
 ```
 
 ### Usage
@@ -187,25 +216,15 @@ Mazo uses a multi-agent architecture with specialized components:
 
 ### Changing Models
 
-Type `/model` in the CLI to switch between:
-- GPT 5.2 (OpenAI)
-- Claude Sonnet 4.5 (Anthropic) - **Default**
-- Gemini 3 (Google)
+Type `/model` in the CLI to switch between available models:
 
-**Model routing with proxy:**
+| Model | Provider | Model ID |
+|-------|----------|----------|
+| Claude Sonnet 4.5 | Anthropic | `claude-sonnet-4-5-20250929` **(Default)** |
+| GPT 5.2 | OpenAI | `gpt-5.2` |
+| Gemini 3 | Google | `gemini-3` |
 
-When using an OpenAI-compatible proxy (`OPENAI_API_BASE` is set):
-- All models are routed through the proxy endpoint
-- The model name is passed directly to the proxy (e.g., `claude-sonnet-4-5-20250929`)
-- Only `OPENAI_API_KEY` is needed - no separate provider keys required
-- The proxy service handles routing to the appropriate LLM provider
-
-**Model routing without proxy:**
-
-When no proxy is configured:
-- Claude models use `ANTHROPIC_API_KEY` directly
-- GPT models use `OPENAI_API_KEY` directly
-- Gemini models use `GOOGLE_API_KEY` directly
+When using a proxy, all models route through the same endpoint. The proxy handles provider routing based on the model ID. See [How Proxy Routing Works](#how-proxy-routing-works) for details.
 
 ## Integration with AI Hedge Fund
 
