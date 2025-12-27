@@ -1,7 +1,8 @@
 import { Card, CardHeader } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
-import { Handle, Position } from '@xyflow/react';
-import { ReactNode } from 'react';
+import { Handle, Position, useReactFlow } from '@xyflow/react';
+import { X } from 'lucide-react';
+import { ReactNode, useCallback } from 'react';
 
 export interface NodeShellProps {
   id: string;
@@ -32,11 +33,23 @@ export function NodeShell({
   status = 'IDLE',
   width = 'w-64',
 }: NodeShellProps) {
+  const { deleteElements, getEdges } = useReactFlow();
   const isInProgress = status === 'IN_PROGRESS';
+
+  const handleDelete = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    // Get all edges connected to this node
+    const connectedEdges = getEdges().filter(
+      edge => edge.source === id || edge.target === id
+    );
+    // Delete the node and its connected edges
+    deleteElements({ nodes: [{ id }], edges: connectedEdges });
+  }, [id, deleteElements, getEdges]);
+
   return (
     <div
       className={cn(
-        "react-flow__node-default relative select-none cursor-pointer p-0 rounded-lg border border-node transition-all duration-200",
+        "group/node react-flow__node-default relative select-none cursor-pointer p-0 rounded-lg border border-node transition-all duration-200",
         width,
         !selected && "hover:border-node-hover hover:shadow-lg",
         selected && "border-node-selected shadow-xl",
@@ -45,6 +58,14 @@ export function NodeShell({
       data-id={id}
       data-nodeid={id}
     >
+      {/* Delete button - appears on hover */}
+      <button
+        onClick={handleDelete}
+        className="absolute -top-2 -right-2 z-20 w-5 h-5 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center opacity-0 group-hover/node:opacity-100 transition-opacity hover:bg-destructive/90 shadow-md"
+        title="Delete node"
+      >
+        <X className="h-3 w-3" />
+      </button>
       {isInProgress && (
         <div className="animated-border-container"></div>
       )}
