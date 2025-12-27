@@ -161,10 +161,15 @@ export function getPlanSystemPrompt(): string {
 // ============================================================================
 
 /**
- * System prompt for tool selection - kept minimal and precise for gpt-5-mini.
+ * System prompt for tool selection.
  */
-export const TOOL_SELECTION_SYSTEM_PROMPT = `Select and call tools to complete the task. Use the provided tickers and parameters.
+export const TOOL_SELECTION_SYSTEM_PROMPT = `You are a tool selection agent. Select and call tools to complete a task.
 
+CRITICAL: You MUST include ALL required arguments in the tool call:
+- For stock/financial tools, the "ticker" argument is REQUIRED (e.g., "AAPL", "NVDA", "MSFT")
+- Use the exact ticker provided in the task
+
+Available tools:
 {tools}`;
 
 export function getToolSelectionSystemPrompt(toolDescriptions: string): string {
@@ -180,12 +185,14 @@ export function buildToolSelectionPrompt(
   tickers: string[],
   periods: string[]
 ): string {
+  const tickerStr = tickers.length > 0 ? tickers.join(', ') : 'none specified';
   return `Task: ${taskDescription}
 
-Tickers: ${tickers.join(', ') || 'none specified'}
-Periods: ${periods.join(', ') || 'use defaults'}
+REQUIRED - Use these tickers in the "ticker" argument: ${tickerStr}
+Time periods: ${periods.join(', ') || 'use defaults'}
 
-Call the tools needed for this task.`;
+Return JSON with tool_calls array. Example:
+{"tool_calls": [{"name": "get_price_snapshot", "args": {"ticker": "AAPL"}}]}`;
 }
 
 // ============================================================================

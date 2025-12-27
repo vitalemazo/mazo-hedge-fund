@@ -1,6 +1,7 @@
 import { StructuredToolInterface } from '@langchain/core/tools';
 import { AIMessage } from '@langchain/core/messages';
-import { callLlm } from '../model/llm.js';
+import { z } from 'zod';
+import { callLlm, DEFAULT_MODEL } from '../model/llm.js';
 import { ToolContextManager } from '../utils/context.js';
 import { getToolSelectionSystemPrompt, buildToolSelectionPrompt } from './prompts.js';
 import type { Task, ToolCallStatus, Understanding } from './state.js';
@@ -9,7 +10,30 @@ import type { Task, ToolCallStatus, Understanding } from './state.js';
 // Constants
 // ============================================================================
 
-const SMALL_MODEL = 'gpt-5-mini';
+// Use a small/fast model for tool selection when available
+// Falls back to DEFAULT_MODEL when using proxies that don't support gpt-5-mini
+const SMALL_MODEL = process.env.OPENAI_API_BASE ? DEFAULT_MODEL : 'gpt-5-mini';
+
+// Schema for tool selection response (for proxies that don't support tool binding)
+// Note: We accept flexible field names since LLMs may use name/tool and args/arguments
+const ToolCallSchema = z.object({
+  name: z.string().optional().describe('Tool name'),
+  tool: z.string().optional().describe('Tool name (alternative)'),
+  args: z.record(z.string(), z.any()).optional().describe('Tool arguments'),
+  arguments: z.record(z.string(), z.any()).optional().describe('Tool arguments (alternative)'),
+});
+
+const ToolSelectionSchema = z.object({
+  tool_calls: z.array(ToolCallSchema).describe('List of tool calls to make'),
+});
+
+// Transform tool call to normalize field names
+function normalizeToolCall(tc: z.infer<typeof ToolCallSchema>): { name: string; args: Record<string, unknown> } {
+  return {
+    name: tc.name || tc.tool || '',
+    args: tc.args || tc.arguments || {},
+  };
+}
 
 // ============================================================================
 // Tool Executor Options
@@ -49,8 +73,8 @@ export class ToolExecutor {
   }
 
   /**
-   * Selects tools for a task using gpt-5-mini with bound tools.
-   * Uses a precise, well-defined prompt optimized for small models.
+   * Selects tools for a task.
+   * Uses JSON schema output when using a proxy (since tool binding isn't supported).
    */
   async selectTools(
     task: Task,
@@ -59,7 +83,7 @@ export class ToolExecutor {
     const tickers = understanding.entities
       .filter(e => e.type === 'ticker')
       .map(e => e.value);
-    
+
     const periods = understanding.entities
       .filter(e => e.type === 'period')
       .map(e => e.value);
@@ -67,6 +91,27 @@ export class ToolExecutor {
     const prompt = buildToolSelectionPrompt(task.description, tickers, periods);
     const systemPrompt = getToolSelectionSystemPrompt(this.formatToolDescriptions());
 
+    // When using a proxy, use JSON schema output instead of tool binding
+    // because most proxies don't support OpenAI's function calling format
+    if (process.env.OPENAI_API_BASE) {
+      const response = await callLlm(prompt, {
+        model: SMALL_MODEL,
+        systemPrompt,
+        outputSchema: ToolSelectionSchema,
+      });
+
+      const result = response as { tool_calls: z.infer<typeof ToolCallSchema>[] };
+      return (result.tool_calls || []).map(tc => {
+        const normalized = normalizeToolCall(tc);
+        return {
+          tool: normalized.name,
+          args: normalized.args,
+          status: 'pending' as const,
+        };
+      });
+    }
+
+    // Use native tool binding when not using a proxy
     const response = await callLlm(prompt, {
       model: SMALL_MODEL,
       systemPrompt,
