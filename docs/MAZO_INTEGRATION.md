@@ -9,11 +9,13 @@ This document describes the integration between **AI Hedge Fund** and **Mazo**, 
 3. [Integration Architecture](#integration-architecture)
 4. [Integration Patterns](#integration-patterns)
 5. [Setup Guide](#setup-guide)
-6. [Web UI Integration](#web-ui-integration)
-7. [API Bridge](#api-bridge)
-8. [Unified Workflow](#unified-workflow)
-9. [Configuration](#configuration)
-10. [Usage Examples](#usage-examples)
+6. [LLM Proxy Configuration](#llm-proxy-configuration)
+7. [Web UI Integration](#web-ui-integration)
+8. [API Bridge](#api-bridge)
+9. [Unified Workflow](#unified-workflow)
+10. [Configuration](#configuration)
+11. [Usage Examples](#usage-examples)
+12. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -109,13 +111,15 @@ AI HEDGE FUND                          MAZO
 | LLM Framework | LangChain (Python) | LangChain.js |
 | UI | React + FastAPI | React + Ink (Terminal) |
 | Data Source | Financial Datasets API | Financial Datasets API |
-| LLM Providers | OpenAI, Anthropic, Groq, etc. | OpenAI, Anthropic, Google |
+| LLM Access | Via Proxy | Via Proxy |
 
 ### Shared Components
 
 Both systems share:
+- **Single `.env` configuration** in the project root
+- **OpenAI-compatible LLM proxy** for all model requests
 - **Financial Datasets API** for market data
-- **Same LLM providers** (OpenAI, Anthropic)
+- **Same API key** for LLM access
 
 ---
 
@@ -146,7 +150,17 @@ Both systems share:
 │  │  • Deep research            │             │  • Signal generation        │
 │  │  • Thesis investigation     │             │  • Multi-agent analysis     │
 │  │  • Explanation generation   │             │  • Risk management          │
-│  └─────────────────────────────┘             └─────────────────────────────┘
+│  └──────────────┬──────────────┘             └──────────────┬──────────────┘
+│                 │                                           │               │
+│                 └─────────────────┬─────────────────────────┘               │
+│                                   ▼                                         │
+│                    ┌─────────────────────────────┐                          │
+│                    │      LLM PROXY              │                          │
+│                    │  (OpenAI-compatible API)    │                          │
+│                    │  • Single endpoint          │                          │
+│                    │  • Routes to Claude/GPT     │                          │
+│                    │  • Unified billing          │                          │
+│                    └─────────────────────────────┘                          │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -185,11 +199,12 @@ Individual AI Hedge Fund agents request specific research from Mazo.
 
 ### Prerequisites
 
-1. Python 3.11+ with Poetry
-2. Bun runtime for Mazo
-3. API keys for:
-   - OpenAI or other LLM provider
-   - Financial Datasets API
+1. **Python 3.11+** - Install via Homebrew: `brew install python@3.13`
+2. **Poetry** - Install via pipx: `pipx install poetry`
+3. **Bun runtime** - Install via: `curl -fsSL https://bun.sh/install | bash`
+4. **API keys**:
+   - OpenAI-compatible proxy API key
+   - Financial Datasets API key
 
 ### Installation
 
@@ -201,29 +216,87 @@ cd mazo-hedge-fund
 # Install Python dependencies
 poetry install
 
+# Set Poetry to use Python 3.13 (recommended)
+poetry env use python3.13
+
 # Install Mazo dependencies
 cd mazo
 bun install
 cd ..
 ```
 
-### Configuration
-
-Set up your `.env` file:
+### Quick Start
 
 ```bash
-# LLM Configuration
-OPENAI_API_KEY=your-key
-OPENAI_API_BASE=https://api.openai.com/v1
+# Run research on a stock
+poetry run python -m integration.unified_workflow --tickers AAPL --mode research --depth quick
 
-# Financial Data
-FINANCIAL_DATASETS_API_KEY=your-key
+# Run full analysis (research + signals)
+poetry run python -m integration.unified_workflow --tickers AAPL --mode full
+```
 
-# Mazo Configuration
-MAZO_PATH=./mazo
+---
+
+## LLM Proxy Configuration
+
+Both AI Hedge Fund and Mazo are designed to work with an **OpenAI-compatible LLM proxy**. This is the recommended setup as it provides:
+
+- **Unified access** to multiple LLM providers (Claude, GPT, Gemini, etc.)
+- **Single API key** for all models
+- **Cost tracking** and rate limiting
+- **Seamless switching** between models
+
+### Setting Up the Proxy
+
+Create a `.env` file in the project root:
+
+```bash
+# ===========================================
+# LLM PROXY CONFIGURATION (Recommended)
+# ===========================================
+# All LLM requests route through this endpoint
+OPENAI_API_KEY=sk-your-proxy-api-key
+OPENAI_API_BASE=https://api.your-proxy-service.com/v1
+
+# ===========================================
+# FINANCIAL DATA API (Required)
+# ===========================================
+FINANCIAL_DATASETS_API_KEY=your-financial-datasets-api-key
+
+# ===========================================
+# WEB SEARCH (Optional)
+# ===========================================
+TAVILY_API_KEY=your-tavily-api-key
+
+# ===========================================
+# MAZO INTEGRATION
+# ===========================================
+MAZO_PATH=/path/to/mazo-hedge-fund/mazo
 MAZO_TIMEOUT=300
 DEFAULT_WORKFLOW_MODE=full
 DEFAULT_RESEARCH_DEPTH=standard
+```
+
+### How Proxy Routing Works
+
+When `OPENAI_API_BASE` is set:
+
+1. **All models route through the proxy** - Claude, GPT, Gemini all use the same endpoint
+2. **Single API key** - Only `OPENAI_API_KEY` is needed
+3. **Model passthrough** - The model name (e.g., `claude-sonnet-4-5-20250929`) is passed directly to the proxy
+4. **Provider routing** - The proxy handles routing to the correct LLM provider
+
+**Default model:** Claude Sonnet 4.5 (`claude-sonnet-4-5-20250929`)
+
+### Direct API Access (Alternative)
+
+If you prefer not to use a proxy:
+
+```bash
+# Direct provider keys (no proxy)
+ANTHROPIC_API_KEY=your-anthropic-api-key  # For Claude models
+OPENAI_API_KEY=your-openai-api-key        # For GPT models
+GOOGLE_API_KEY=your-google-api-key        # For Gemini models
 ```
 
 ---
@@ -231,6 +304,15 @@ DEFAULT_RESEARCH_DEPTH=standard
 ## Web UI Integration
 
 The web application includes Mazo research capabilities directly in the interface.
+
+### Starting the Web App
+
+```bash
+cd app
+./run.sh   # macOS/Linux
+# or
+run.bat    # Windows
+```
 
 ### Research Tab
 
@@ -324,36 +406,6 @@ The web UI uses these REST endpoints:
 | `sector_overview` | Sector Overview | Industry dynamics |
 | `quick_summary` | Quick Summary | Fast 2-minute overview |
 
-### Streaming Research (SSE)
-
-The `/mazo/research/stream` endpoint provides real-time progress updates:
-
-```typescript
-// Frontend usage example
-const controller = mazoApi.researchStream(
-  { query: "What's driving NVDA's growth?", depth: 'standard' },
-  (event) => {
-    switch (event.type) {
-      case 'start':
-        console.log('Research started');
-        break;
-      case 'progress':
-        console.log('Progress:', event.data.message);
-        break;
-      case 'complete':
-        console.log('Answer:', event.data.answer);
-        break;
-      case 'error':
-        console.error('Error:', event.data.message);
-        break;
-    }
-  }
-);
-
-// Cancel stream if needed
-controller.abort();
-```
-
 ---
 
 ## API Bridge
@@ -394,19 +446,22 @@ Run integrated analysis via CLI:
 
 ```bash
 # Full workflow (Mazo research + AI HF signal + Mazo explanation)
-python -m integration.unified_workflow --tickers AAPL --mode full
+poetry run python -m integration.unified_workflow --tickers AAPL --mode full
 
 # Pre-research mode (Mazo first, then AI HF)
-python -m integration.unified_workflow --tickers AAPL --mode pre-research
+poetry run python -m integration.unified_workflow --tickers AAPL --mode pre-research
 
 # Post-research mode (AI HF first, then Mazo explains)
-python -m integration.unified_workflow --tickers AAPL --mode post-research
+poetry run python -m integration.unified_workflow --tickers AAPL --mode post-research
 
 # Signal only (just AI Hedge Fund)
-python -m integration.unified_workflow --tickers AAPL --mode signal
+poetry run python -m integration.unified_workflow --tickers AAPL --mode signal
 
 # Research only (just Mazo)
-python -m integration.unified_workflow --tickers AAPL --mode research
+poetry run python -m integration.unified_workflow --tickers AAPL --mode research
+
+# Multiple tickers
+poetry run python -m integration.unified_workflow --tickers AAPL,MSFT,GOOGL --mode research
 ```
 
 ---
@@ -417,6 +472,10 @@ python -m integration.unified_workflow --tickers AAPL --mode research
 
 | Variable | Description | Default |
 |----------|-------------|---------|
+| `OPENAI_API_KEY` | API key for LLM proxy | Required |
+| `OPENAI_API_BASE` | LLM proxy endpoint URL | Required for proxy |
+| `FINANCIAL_DATASETS_API_KEY` | Financial data API key | Required |
+| `TAVILY_API_KEY` | Web search API key | Optional |
 | `MAZO_PATH` | Path to Mazo installation | `./mazo` |
 | `MAZO_TIMEOUT` | Query timeout in seconds | `300` |
 | `DEFAULT_WORKFLOW_MODE` | Default workflow mode | `full` |
@@ -424,26 +483,33 @@ python -m integration.unified_workflow --tickers AAPL --mode research
 
 ### Research Depth Levels
 
-- **quick**: Brief overview, key metrics
-- **standard**: Comprehensive analysis with valuation
-- **deep**: Exhaustive research with scenarios
+- **quick**: Brief overview, key metrics (~30 seconds)
+- **standard**: Comprehensive analysis with valuation (~1-2 minutes)
+- **deep**: Exhaustive research with scenarios (~3-5 minutes)
 
 ---
 
 ## Usage Examples
 
-### Example 1: Full Analysis
+### Example 1: Quick Research
 
 ```bash
-python -m integration.unified_workflow \
-  --tickers AAPL MSFT \
-  --mode full \
-  --depth deep \
-  --output markdown \
-  --output-file analysis.md
+poetry run python -m integration.unified_workflow \
+  --tickers AAPL \
+  --mode research \
+  --depth quick
 ```
 
-### Example 2: Python Integration
+### Example 2: Full Analysis with Multiple Tickers
+
+```bash
+poetry run python -m integration.unified_workflow \
+  --tickers AAPL,MSFT,GOOGL \
+  --mode full \
+  --depth standard
+```
+
+### Example 3: Python Integration
 
 ```python
 from integration.unified_workflow import UnifiedWorkflow, WorkflowMode
@@ -458,6 +524,61 @@ for result in results:
     print(f"{result.ticker}: {result.signal} ({result.confidence}%)")
     print(result.research_report)
 ```
+
+### Example 4: Interactive Mazo Terminal
+
+```bash
+cd mazo
+bun start
+```
+
+Then ask questions like:
+- "Compare Microsoft and Google's operating margins for 2023"
+- "What's driving NVIDIA's growth?"
+- "Analyze Tesla's cash flow trends"
+
+---
+
+## Troubleshooting
+
+### Schema Validation Warnings
+
+When using a proxy, you may see warnings like:
+```
+Schema validation warning: Invalid option: expected one of "ticker"|"date"|...
+```
+
+**These warnings are normal and can be safely ignored.** They occur because:
+- Proxies don't support OpenAI's native structured output format
+- Mazo uses JSON prompting as a fallback
+- The code handles this gracefully and continues working
+
+### Python Version Issues
+
+If you see:
+```
+The currently activated Python version 3.9.6 is not supported by the project (^3.11)
+```
+
+Fix by setting Poetry to use Python 3.13:
+```bash
+poetry env use python3.13
+poetry install
+```
+
+### Mazo Not Found
+
+If the bridge can't find Mazo:
+1. Verify `MAZO_PATH` in your `.env` points to the correct directory
+2. Ensure Bun is installed: `bun --version`
+3. Ensure Mazo dependencies are installed: `cd mazo && bun install`
+
+### LLM Timeouts
+
+For complex queries that timeout:
+1. Increase `MAZO_TIMEOUT` in `.env` (default: 300 seconds)
+2. Use `--depth quick` for faster responses
+3. Break complex queries into smaller questions
 
 ---
 
