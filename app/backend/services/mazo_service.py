@@ -128,9 +128,26 @@ RESEARCH_TEMPLATES = {
 class MazoService:
     """Service for interacting with the Mazo research agent."""
 
-    def __init__(self):
-        self.mazo_path = os.getenv("MAZO_PATH", str(Path(__file__).parent.parent.parent.parent / "mazo"))
+    def __init__(self, api_keys: Optional[Dict[str, Any]] = None):
+        # Get absolute path to mazo directory (relative to this file's location)
+        default_mazo_path = Path(__file__).parent.parent.parent.parent / "mazo"
+        self.mazo_path = os.getenv("MAZO_PATH", str(default_mazo_path.resolve()))
         self.timeout = int(os.getenv("MAZO_TIMEOUT", "300"))
+        self.api_keys = api_keys or {}
+
+    def _get_env_with_api_keys(self) -> Dict[str, str]:
+        """Get environment variables with API keys merged in."""
+        env = {**os.environ}
+        # Add API keys from database
+        for key, value in self.api_keys.items():
+            if value:
+                env[key] = value
+        # Ensure bun is in PATH
+        home = os.path.expanduser("~")
+        bun_path = os.path.join(home, ".bun", "bin")
+        if bun_path not in env.get("PATH", ""):
+            env["PATH"] = f"{bun_path}:{env.get('PATH', '')}"
+        return env
 
     async def research(self, query: str, depth: ResearchDepth = ResearchDepth.STANDARD) -> dict:
         """
@@ -348,16 +365,16 @@ Please provide a detailed explanation of why this signal makes sense (or doesn't
                 }
             }
 
-            # Build the command
-            cmd = ["bun", "run", "src/cli.tsx", "--query", query, "--depth", depth.value]
+            # Build the command - use api.ts for non-interactive mode
+            cmd = ["bun", "run", "src/api.ts", "--query", query]
 
-            # Start the process
+            # Start the process with API keys from database
             process = await asyncio.create_subprocess_exec(
                 *cmd,
                 cwd=self.mazo_path,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
-                env={**os.environ}
+                env=self._get_env_with_api_keys()
             )
 
             # Send progress event
@@ -460,16 +477,16 @@ Please provide a detailed explanation of why this signal makes sense (or doesn't
             Dict containing the research results
         """
         try:
-            # Build the command
-            cmd = ["bun", "run", "src/cli.tsx", "--query", query, "--depth", depth.value]
+            # Build the command - use api.ts for non-interactive mode
+            cmd = ["bun", "run", "src/api.ts", "--query", query]
 
-            # Run the command asynchronously
+            # Run the command asynchronously with API keys from database
             process = await asyncio.create_subprocess_exec(
                 *cmd,
                 cwd=self.mazo_path,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
-                env={**os.environ}
+                env=self._get_env_with_api_keys()
             )
 
             try:
@@ -522,10 +539,15 @@ Please provide a detailed explanation of why this signal makes sense (or doesn't
                 "sources": []
             }
 
-        except FileNotFoundError:
+        except FileNotFoundError as e:
+            # Log debug info
+            import logging
+            logging.error(f"Mazo FileNotFoundError: {e}")
+            logging.error(f"Mazo path: {self.mazo_path}")
+            logging.error(f"PATH: {self._get_env_with_api_keys().get('PATH', '')[:200]}")
             return {
                 "success": False,
-                "error": "Mazo not found. Ensure Bun is installed and Mazo is properly configured.",
+                "error": f"Mazo not found: {e}. Bun path: ~/.bun/bin/bun, Mazo path: {self.mazo_path}",
                 "answer": None,
                 "confidence": 0,
                 "sources": []
@@ -540,13 +562,6 @@ Please provide a detailed explanation of why this signal makes sense (or doesn't
             }
 
 
-# Singleton instance
-_mazo_service: Optional[MazoService] = None
-
-
-def get_mazo_service() -> MazoService:
-    """Get the singleton Mazo service instance."""
-    global _mazo_service
-    if _mazo_service is None:
-        _mazo_service = MazoService()
-    return _mazo_service
+def get_mazo_service(api_keys: Optional[Dict[str, Any]] = None) -> MazoService:
+    """Get a Mazo service instance with the given API keys."""
+    return MazoService(api_keys=api_keys)

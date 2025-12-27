@@ -4,16 +4,25 @@ Mazo Research API Routes
 Provides REST endpoints for interacting with the Mazo research agent.
 """
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
-from typing import List, Optional
+from typing import List, Optional, Dict
+from sqlalchemy.orm import Session
 import json
 
 from app.backend.services.mazo_service import get_mazo_service, ResearchDepth, RESEARCH_TEMPLATES
+from app.backend.services.api_key_service import ApiKeyService
+from app.backend.database import get_db
 
 
 router = APIRouter(prefix="/mazo")
+
+
+def get_api_keys(db: Session) -> Dict[str, str]:
+    """Get API keys from the database."""
+    api_key_service = ApiKeyService(db)
+    return api_key_service.get_api_keys_dict()
 
 
 # Request/Response Models
@@ -241,7 +250,7 @@ class ResearchResponse(BaseModel):
         500: {"description": "Internal server error"},
     },
 )
-async def research(request: ResearchRequest):
+async def research(request: ResearchRequest, db: Session = Depends(get_db)):
     """
     Execute a research query using Mazo.
 
@@ -249,7 +258,8 @@ async def research(request: ResearchRequest):
     detailed analysis with confidence scores and sources.
     """
     try:
-        service = get_mazo_service()
+        api_keys = get_api_keys(db)
+        service = get_mazo_service(api_keys)
         result = await service.research(request.query, request.depth)
         return ResearchResponse(**result)
     except Exception as e:
@@ -264,7 +274,7 @@ async def research(request: ResearchRequest):
         500: {"description": "Internal server error"},
     },
 )
-async def analyze_company(request: CompanyAnalysisRequest):
+async def analyze_company(request: CompanyAnalysisRequest, db: Session = Depends(get_db)):
     """
     Run comprehensive company analysis.
 
@@ -272,7 +282,8 @@ async def analyze_company(request: CompanyAnalysisRequest):
     financial health, growth prospects, and key risks.
     """
     try:
-        service = get_mazo_service()
+        api_keys = get_api_keys(db)
+        service = get_mazo_service(api_keys)
         result = await service.analyze_company(request.ticker, request.depth)
         return ResearchResponse(**result)
     except Exception as e:
@@ -287,7 +298,7 @@ async def analyze_company(request: CompanyAnalysisRequest):
         500: {"description": "Internal server error"},
     },
 )
-async def compare_companies(request: CompareCompaniesRequest):
+async def compare_companies(request: CompareCompaniesRequest, db: Session = Depends(get_db)):
     """
     Compare multiple companies.
 
@@ -295,7 +306,8 @@ async def compare_companies(request: CompareCompaniesRequest):
     of the specified companies.
     """
     try:
-        service = get_mazo_service()
+        api_keys = get_api_keys(db)
+        service = get_mazo_service(api_keys)
         result = await service.compare_companies(request.tickers, request.depth)
         return ResearchResponse(**result)
     except Exception as e:
@@ -310,7 +322,7 @@ async def compare_companies(request: CompareCompaniesRequest):
         500: {"description": "Internal server error"},
     },
 )
-async def explain_signal(request: ExplainSignalRequest):
+async def explain_signal(request: ExplainSignalRequest, db: Session = Depends(get_db)):
     """
     Explain a trading signal using Mazo research.
 
@@ -318,7 +330,8 @@ async def explain_signal(request: ExplainSignalRequest):
     detailed context and analysis explaining why the signal was generated.
     """
     try:
-        service = get_mazo_service()
+        api_keys = get_api_keys(db)
+        service = get_mazo_service(api_keys)
         result = await service.explain_signal(
             request.ticker,
             request.signal,
@@ -337,7 +350,7 @@ async def explain_signal(request: ExplainSignalRequest):
         500: {"description": "Internal server error"},
     },
 )
-async def pre_research(request: PreResearchRequest):
+async def pre_research(request: PreResearchRequest, db: Session = Depends(get_db)):
     """
     Run pre-workflow research for trading context.
 
@@ -345,7 +358,8 @@ async def pre_research(request: PreResearchRequest):
     workflow, providing better-informed agent decisions.
     """
     try:
-        service = get_mazo_service()
+        api_keys = get_api_keys(db)
+        service = get_mazo_service(api_keys)
         result = await service.pre_research(request.tickers, request.depth)
         return result
     except Exception as e:
@@ -358,14 +372,15 @@ async def pre_research(request: PreResearchRequest):
         200: {"description": "Mazo service health status"},
     },
 )
-async def health_check():
+async def health_check(db: Session = Depends(get_db)):
     """
     Check Mazo service health.
 
     Verifies that the Mazo agent is properly configured and accessible.
     """
     try:
-        service = get_mazo_service()
+        api_keys = get_api_keys(db)
+        service = get_mazo_service(api_keys)
         # Quick test query
         result = await service.research("What is 2+2?", ResearchDepth.QUICK)
         return {
@@ -408,7 +423,7 @@ async def list_templates():
         500: {"description": "Internal server error"},
     },
 )
-async def research_with_template(request: TemplateResearchRequest):
+async def research_with_template(request: TemplateResearchRequest, db: Session = Depends(get_db)):
     """
     Run research using a predefined template.
 
@@ -421,7 +436,8 @@ async def research_with_template(request: TemplateResearchRequest):
             detail=f"Template '{request.template_id}' not found. Use GET /mazo/templates to see available templates."
         )
     try:
-        service = get_mazo_service()
+        api_keys = get_api_keys(db)
+        service = get_mazo_service(api_keys)
         result = await service.research_with_template(
             request.ticker,
             request.template_id,
@@ -440,7 +456,7 @@ async def research_with_template(request: TemplateResearchRequest):
         500: {"description": "Internal server error"},
     },
 )
-async def batch_analyze(request: BatchAnalysisRequest):
+async def batch_analyze(request: BatchAnalysisRequest, db: Session = Depends(get_db)):
     """
     Analyze multiple tickers using a template.
 
@@ -453,7 +469,8 @@ async def batch_analyze(request: BatchAnalysisRequest):
             detail=f"Template '{request.template_id}' not found. Use GET /mazo/templates to see available templates."
         )
     try:
-        service = get_mazo_service()
+        api_keys = get_api_keys(db)
+        service = get_mazo_service(api_keys)
         result = await service.batch_analyze(
             request.tickers,
             request.template_id,
@@ -464,9 +481,9 @@ async def batch_analyze(request: BatchAnalysisRequest):
         raise HTTPException(status_code=500, detail=f"Batch analysis failed: {str(e)}")
 
 
-async def generate_sse_events(query: str, depth: ResearchDepth):
+async def generate_sse_events(query: str, depth: ResearchDepth, api_keys: Dict[str, str]):
     """Generator for SSE events from research stream."""
-    service = get_mazo_service()
+    service = get_mazo_service(api_keys)
     async for event in service.research_stream(query, depth):
         yield f"data: {json.dumps(event)}\n\n"
 
@@ -478,7 +495,7 @@ async def generate_sse_events(query: str, depth: ResearchDepth):
         500: {"description": "Internal server error"},
     },
 )
-async def research_stream(request: ResearchRequest):
+async def research_stream(request: ResearchRequest, db: Session = Depends(get_db)):
     """
     Stream research results using Server-Sent Events (SSE).
 
@@ -495,8 +512,9 @@ async def research_stream(request: ResearchRequest):
             console.log(data.type, data.data);
         };
     """
+    api_keys = get_api_keys(db)
     return StreamingResponse(
-        generate_sse_events(request.query, request.depth),
+        generate_sse_events(request.query, request.depth, api_keys),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
