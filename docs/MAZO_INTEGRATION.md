@@ -10,12 +10,13 @@ This document describes the integration between **AI Hedge Fund** and **Mazo**, 
 4. [Integration Patterns](#integration-patterns)
 5. [Setup Guide](#setup-guide)
 6. [LLM Proxy Configuration](#llm-proxy-configuration)
-7. [Web UI Integration](#web-ui-integration)
-8. [API Bridge](#api-bridge)
-9. [Unified Workflow](#unified-workflow)
-10. [Configuration](#configuration)
-11. [Usage Examples](#usage-examples)
-12. [Troubleshooting](#troubleshooting)
+7. [Alpaca Trading Integration](#alpaca-trading-integration)
+8. [Web UI Integration](#web-ui-integration)
+9. [API Bridge](#api-bridge)
+10. [Unified Workflow](#unified-workflow)
+11. [Configuration](#configuration)
+12. [Usage Examples](#usage-examples)
+13. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -138,6 +139,7 @@ Both systems share:
 │  └─────────────┘         │  • Routes requests to appropriate system    │   │
 │                          │  • Manages data flow between systems        │   │
 │                          │  • Aggregates results                       │   │
+│                          │  • Executes trades on Alpaca                │   │
 │                          └─────────────────────────────────────────────┘   │
 │                                            │                               │
 │                    ┌───────────────────────┴───────────────────────┐       │
@@ -155,11 +157,11 @@ Both systems share:
 │                 └─────────────────┬─────────────────────────┘               │
 │                                   ▼                                         │
 │                    ┌─────────────────────────────┐                          │
-│                    │      LLM PROXY              │                          │
-│                    │  (OpenAI-compatible API)    │                          │
-│                    │  • Single endpoint          │                          │
-│                    │  • Routes to Claude/GPT     │                          │
-│                    │  • Unified billing          │                          │
+│                    │      ALPACA TRADING         │                          │
+│                    │  • Paper trading mode       │                          │
+│                    │  • Live trading mode        │                          │
+│                    │  • Order execution          │                          │
+│                    │  • Position management      │                          │
 │                    └─────────────────────────────┘                          │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
@@ -298,6 +300,142 @@ ANTHROPIC_API_KEY=your-anthropic-api-key  # For Claude models
 OPENAI_API_KEY=your-openai-api-key        # For GPT models
 GOOGLE_API_KEY=your-google-api-key        # For Gemini models
 ```
+
+---
+
+## Alpaca Trading Integration
+
+The system integrates with [Alpaca Markets](https://alpaca.markets/) to execute trades based on AI-generated signals. This enables the complete workflow from research to execution.
+
+### Trading Flow
+
+```
+1. USER REQUEST
+   └── poetry run python -m integration.unified_workflow --tickers AAPL --execute
+
+2. MAZO RESEARCH (optional)
+   └── Deep analysis of company fundamentals
+
+3. AI HEDGE FUND ANALYSIS
+   ├── 18 agents analyze the stock
+   ├── Each agent provides: Signal (BULLISH/BEARISH/NEUTRAL) + Confidence %
+   └── Risk Manager calculates position limits
+
+4. PORTFOLIO MANAGER DECISION
+   ├── Aggregates all agent signals
+   ├── Determines action: BUY, SELL, SHORT, COVER, or HOLD
+   └── Calculates quantity based on risk limits
+
+5. ALPACA EXECUTION
+   ├── Connects to Alpaca API (paper or live)
+   ├── Submits order (market order by default)
+   └── Reports execution status
+
+6. RESULT
+   └── Order ID, filled price, updated positions
+```
+
+### Setup Alpaca
+
+1. **Create Account**: Go to [https://app.alpaca.markets/](https://app.alpaca.markets/)
+2. **Generate API Keys**: Navigate to Paper Trading → API Keys
+3. **Configure Environment**:
+
+```bash
+# Add to .env file
+ALPACA_API_KEY=PKXXXXXXXXXXXXXXXXXX
+ALPACA_SECRET_KEY=XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+ALPACA_BASE_URL=https://paper-api.alpaca.markets/v2
+ALPACA_TRADING_MODE=paper
+```
+
+### Trading Commands
+
+```bash
+# Analyze only (no trading)
+poetry run python -m integration.unified_workflow --tickers AAPL --mode signal
+
+# Dry run (preview trades)
+poetry run python -m integration.unified_workflow --tickers AAPL --mode signal --dry-run
+
+# Execute paper trades
+poetry run python -m integration.unified_workflow --tickers AAPL --mode signal --execute
+
+# Full workflow with research + trading
+poetry run python -m integration.unified_workflow --tickers AAPL --mode full --execute
+
+# Multiple tickers
+poetry run python -m integration.unified_workflow --tickers AAPL MSFT GOOGL --mode signal --execute
+```
+
+### Supported Actions
+
+| Action | Description | When Used |
+|--------|-------------|-----------|
+| BUY | Purchase shares (go long) | Bullish signal |
+| SELL | Sell existing long position | Bearish signal on long |
+| SHORT | Sell shares you don't own | Bearish signal |
+| COVER | Buy back shorted shares | Bullish signal on short |
+| HOLD | No action | Neutral signal or low confidence |
+
+### Risk Management
+
+The system includes built-in protections:
+
+| Protection | Description |
+|------------|-------------|
+| Position Limits | Maximum position size based on volatility |
+| Confidence Threshold | Low confidence signals default to HOLD |
+| Paper Trading Default | Uses paper trading unless explicitly configured |
+| Dry Run Mode | Preview trades before executing |
+
+### Example Output
+
+```
+============================================================
+ALPACA TRADING EXECUTION
+============================================================
+Account Status: ACTIVE
+Mode: PAPER
+Buying Power: $10,000.00
+Cash: $5,000.00
+============================================================
+
+[AAPL] Executing: SHORT 91 shares...
+[AAPL] SUCCESS: Order cefb3813-e0e8-4e2a-8de0-d6f7b46c5392
+
+============================================================
+CURRENT POSITIONS
+============================================================
+  AAPL: -91 shares @ $254.32
+    Current: $253.50 | P/L: +$74.62 (+0.3%)
+============================================================
+```
+
+### Python API
+
+```python
+from src.trading.alpaca_service import AlpacaService
+
+alpaca = AlpacaService()
+
+# Check account
+account = alpaca.get_account()
+print(f"Buying Power: ${account.buying_power:,.2f}")
+
+# Execute trades
+result = alpaca.buy("AAPL", qty=10)
+result = alpaca.sell("AAPL", qty=5)
+result = alpaca.short("AAPL", qty=10)
+result = alpaca.cover("AAPL", qty=10)
+
+# Get positions
+positions = alpaca.get_positions()
+for pos in positions:
+    print(f"{pos.symbol}: {pos.qty} shares, P/L: ${pos.unrealized_pl:.2f}")
+```
+
+For complete trading documentation, see [TRADING.md](TRADING.md).
 
 ---
 
@@ -470,12 +608,34 @@ poetry run python -m integration.unified_workflow --tickers AAPL,MSFT,GOOGL --mo
 
 ### Environment Variables
 
+#### LLM Configuration
+
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `OPENAI_API_KEY` | API key for LLM proxy | Required |
 | `OPENAI_API_BASE` | LLM proxy endpoint URL | Required for proxy |
+| `ANTHROPIC_API_KEY` | Direct Anthropic API key | Optional |
+
+#### Financial Data
+
+| Variable | Description | Default |
+|----------|-------------|---------|
 | `FINANCIAL_DATASETS_API_KEY` | Financial data API key | Required |
 | `TAVILY_API_KEY` | Web search API key | Optional |
+
+#### Alpaca Trading
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `ALPACA_API_KEY` | Alpaca API key | Required for trading |
+| `ALPACA_SECRET_KEY` | Alpaca secret key | Required for trading |
+| `ALPACA_BASE_URL` | Alpaca API endpoint | `https://paper-api.alpaca.markets/v2` |
+| `ALPACA_TRADING_MODE` | Trading mode (paper/live) | `paper` |
+
+#### Mazo Integration
+
+| Variable | Description | Default |
+|----------|-------------|---------|
 | `MAZO_PATH` | Path to Mazo installation | `./mazo` |
 | `MAZO_TIMEOUT` | Query timeout in seconds | `300` |
 | `DEFAULT_WORKFLOW_MODE` | Default workflow mode | `full` |
@@ -504,28 +664,66 @@ poetry run python -m integration.unified_workflow \
 
 ```bash
 poetry run python -m integration.unified_workflow \
-  --tickers AAPL,MSFT,GOOGL \
+  --tickers AAPL MSFT GOOGL \
   --mode full \
   --depth standard
 ```
 
-### Example 3: Python Integration
+### Example 3: Signal Generation with Paper Trading
+
+```bash
+# Preview trades (dry run)
+poetry run python -m integration.unified_workflow \
+  --tickers AAPL \
+  --mode signal \
+  --dry-run
+
+# Execute paper trades
+poetry run python -m integration.unified_workflow \
+  --tickers AAPL \
+  --mode signal \
+  --execute
+```
+
+### Example 4: Full Workflow with Trading Execution
+
+```bash
+# Research + Signal + Trading
+poetry run python -m integration.unified_workflow \
+  --tickers AAPL MSFT GOOGL NVDA \
+  --mode full \
+  --depth standard \
+  --execute
+```
+
+### Example 5: Python Integration
 
 ```python
-from integration.unified_workflow import UnifiedWorkflow, WorkflowMode
+from integration.unified_workflow import UnifiedWorkflow, WorkflowMode, execute_trades
 
 workflow = UnifiedWorkflow()
 results = workflow.analyze(
-    tickers=["AAPL"],
-    mode=WorkflowMode.FULL,
+    tickers=["AAPL", "MSFT"],
+    mode=WorkflowMode.SIGNAL_ONLY,
 )
 
+# Preview signals
 for result in results:
     print(f"{result.ticker}: {result.signal} ({result.confidence}%)")
-    print(result.research_report)
+    if result.recommended_action:
+        print(f"  Recommendation: {result.recommended_action} {result.recommended_quantity} shares")
+
+# Execute trades
+results = execute_trades(results, dry_run=False)
+
+# Check trade results
+for result in results:
+    if result.trade and result.trade.executed:
+        print(f"{result.ticker}: Executed {result.trade.action} {result.trade.quantity} shares")
+        print(f"  Order ID: {result.trade.order_id}")
 ```
 
-### Example 4: Interactive Mazo Terminal
+### Example 6: Interactive Mazo Terminal
 
 ```bash
 cd mazo
@@ -579,6 +777,39 @@ For complex queries that timeout:
 1. Increase `MAZO_TIMEOUT` in `.env` (default: 300 seconds)
 2. Use `--depth quick` for faster responses
 3. Break complex queries into smaller questions
+
+### Alpaca Connection Issues
+
+**Error:** `Alpaca API credentials not found`
+
+1. Verify your `.env` file contains:
+```bash
+ALPACA_API_KEY=your-key
+ALPACA_SECRET_KEY=your-secret
+ALPACA_BASE_URL=https://paper-api.alpaca.markets/v2
+```
+
+2. Check credentials are valid at [https://app.alpaca.markets/](https://app.alpaca.markets/)
+
+### Trading Order Rejected
+
+**Error:** `insufficient buying power`
+
+Check account balance:
+```python
+from src.trading.alpaca_service import AlpacaService
+alpaca = AlpacaService()
+account = alpaca.get_account()
+print(f"Buying Power: ${account.buying_power:,.2f}")
+```
+
+**Error:** `market is not open`
+
+Orders will be queued for next market open. Use `--dry-run` to preview trades outside market hours.
+
+### Trading Documentation
+
+For complete trading documentation, troubleshooting, and API reference, see [TRADING.md](TRADING.md).
 
 ---
 
