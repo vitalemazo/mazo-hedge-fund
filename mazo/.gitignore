@@ -51,10 +51,6 @@ yarn-error.log*
 # Cursor files
 .cursor/
 
-# Dexter context files (offloaded tool outputs)
-.dexter/context/
-.dexter/settings.json
-
 # Mazo context files
 .mazo/
 
