@@ -13,10 +13,11 @@ import { SidebarStorageService } from '@/services/sidebar-storage';
 import { TabService } from '@/services/tab-service';
 import { ReactFlowProvider } from '@xyflow/react';
 import { ReactNode, useEffect, useState } from 'react';
+import { PanelHints } from './layout/panel-hints';
 import { TopBar } from './layout/top-bar';
 
 // Create a LayoutContent component to access the FlowContext, TabsContext, and LayoutContext
-function LayoutContent({ children }: { children: ReactNode }) {
+function LayoutContent({ children: _children }: { children: ReactNode }) {
   const { reactFlowInstance } = useFlowContext();
   const { openTab } = useTabsContext();
   const { isBottomCollapsed, expandBottomPanel, collapseBottomPanel, toggleBottomPanel } = useLayoutContext();
@@ -77,26 +78,6 @@ function LayoutContent({ children }: { children: ReactNode }) {
     return {
       left: `${left}px`,
       right: `${right}px`,
-    };
-  };
-
-  // Calculate main content positioning accounting for tab bar height
-  const getMainContentStyle = () => {
-    const tabBarHeight = 40; // Approximate tab bar height
-    let top = tabBarHeight;
-    let bottom = 0;
-    
-    if (!isBottomCollapsed) {
-      bottom = bottomPanelHeight;
-    }
-    
-    return {
-      top: `${top}px`,
-      bottom: `${bottom}px`,
-      left: '0',
-      right: '0',
-      width: 'auto',
-      height: 'auto',
     };
   };
 
@@ -161,7 +142,7 @@ function LayoutContent({ children }: { children: ReactNode }) {
       </div>
 
       {/* Bottom panel */}
-      <div 
+      <div
         className={cn(
           "absolute bottom-0 z-20 transition-transform",
           isBottomCollapsed && "transform translate-y-full opacity-0"
@@ -176,6 +157,16 @@ function LayoutContent({ children }: { children: ReactNode }) {
           onHeightChange={setBottomPanelHeight}
         />
       </div>
+
+      {/* Panel edge hints when collapsed */}
+      <PanelHints
+        isLeftCollapsed={isLeftCollapsed}
+        isRightCollapsed={isRightCollapsed}
+        isBottomCollapsed={isBottomCollapsed}
+        onOpenLeft={() => setIsLeftCollapsed(false)}
+        onOpenRight={() => setIsRightCollapsed(false)}
+        onOpenBottom={expandBottomPanel}
+      />
     </div>
   );
 }
