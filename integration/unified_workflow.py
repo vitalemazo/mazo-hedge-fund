@@ -18,7 +18,8 @@ import json
 import sys
 import os
 from datetime import datetime
-from typing import List, Optional, Dict, Any
+from dateutil.relativedelta import relativedelta
+from typing import List, Optional, Dict, Any, Tuple
 from dataclasses import dataclass, field, asdict
 from enum import Enum
 from pathlib import Path
@@ -28,6 +29,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from integration.mazo_bridge import MazoBridge, MazoResponse
 from integration.config import config
+from src.main import run_hedge_fund
 
 
 class WorkflowMode(Enum):
@@ -165,6 +167,118 @@ class UnifiedWorkflow:
         self.api_keys = api_keys or {}
         self.mazo = MazoBridge()
 
+    def _run_hedge_fund(
+        self,
+        ticker: str,
+        analysts: List[str] = None
+    ) -> Tuple[str, float, List[AgentSignal], Dict]:
+        """
+        Run the AI Hedge Fund and extract signals.
+
+        Args:
+            ticker: Stock ticker symbol
+            analysts: List of analyst keys to use (None = all)
+
+        Returns:
+            Tuple of (signal, confidence, agent_signals, raw_result)
+        """
+        # Build portfolio for this ticker
+        end_date = datetime.now().strftime('%Y-%m-%d')
+        start_date = (datetime.now() - relativedelta(months=1)).strftime('%Y-%m-%d')
+
+        portfolio = {
+            'cash': 100000,
+            'margin_requirement': 0.5,
+            'margin_used': 0.0,
+            'positions': {
+                ticker: {
+                    'long': 0, 'short': 0,
+                    'long_cost_basis': 0.0, 'short_cost_basis': 0.0,
+                    'short_margin_used': 0.0
+                }
+            },
+            'realized_gains': {ticker: {'long': 0.0, 'short': 0.0}}
+        }
+
+        # Run the hedge fund
+        result = run_hedge_fund(
+            tickers=[ticker],
+            start_date=start_date,
+            end_date=end_date,
+            portfolio=portfolio,
+            show_reasoning=True,
+            selected_analysts=analysts or [],
+            model_name=self.model_name,
+            model_provider=self.model_provider,
+        )
+
+        # Extract signals from agents
+        agent_signals = []
+        all_signals = []
+
+        for agent_key, signals_dict in result.get('analyst_signals', {}).items():
+            if agent_key == 'risk_management_agent':
+                continue  # Skip risk management for signal aggregation
+
+            if isinstance(signals_dict, dict) and ticker in signals_dict:
+                signal_data = signals_dict[ticker]
+            elif isinstance(signals_dict, dict):
+                signal_data = signals_dict
+            else:
+                continue
+
+            if isinstance(signal_data, dict):
+                signal = signal_data.get('signal', 'neutral').upper()
+                confidence = float(signal_data.get('confidence', 50))
+                reasoning = signal_data.get('reasoning', 'No reasoning provided')
+
+                agent_signals.append(AgentSignal(
+                    agent_name=agent_key.replace('_agent', '').replace('_', ' ').title(),
+                    signal=signal,
+                    confidence=confidence,
+                    reasoning=reasoning
+                ))
+
+                all_signals.append((signal, confidence))
+
+        # Aggregate signals to determine overall signal
+        if all_signals:
+            # Weight by confidence
+            bullish_weight = sum(c for s, c in all_signals if s == 'BULLISH')
+            bearish_weight = sum(c for s, c in all_signals if s == 'BEARISH')
+            neutral_weight = sum(c for s, c in all_signals if s == 'NEUTRAL')
+
+            max_weight = max(bullish_weight, bearish_weight, neutral_weight)
+            if max_weight == bullish_weight and bullish_weight > 0:
+                overall_signal = 'BULLISH'
+                overall_confidence = bullish_weight / len(all_signals)
+            elif max_weight == bearish_weight and bearish_weight > 0:
+                overall_signal = 'BEARISH'
+                overall_confidence = bearish_weight / len(all_signals)
+            else:
+                overall_signal = 'NEUTRAL'
+                overall_confidence = neutral_weight / len(all_signals) if neutral_weight > 0 else 50.0
+        else:
+            overall_signal = 'NEUTRAL'
+            overall_confidence = 50.0
+
+        # Get portfolio decision
+        decisions = result.get('decisions', {})
+        if decisions and ticker in decisions:
+            decision = decisions[ticker]
+            decision_reasoning = decision.get('reasoning', '')
+            # Add portfolio manager signal
+            action = decision.get('action', 'hold').upper()
+            pm_signal = 'BULLISH' if action in ['BUY', 'COVER'] else 'BEARISH' if action in ['SELL', 'SHORT'] else 'NEUTRAL'
+            agent_signals.append(AgentSignal(
+                agent_name='Portfolio Manager',
+                signal=pm_signal,
+                confidence=float(decision.get('confidence', 50)),
+                reasoning=f"Action: {action} {decision.get('quantity', 0)} shares. {decision_reasoning}"
+            ))
+
+        return overall_signal, overall_confidence, agent_signals, result
+
     def analyze(
         self,
         tickers: List[str],
@@ -236,32 +350,27 @@ class UnifiedWorkflow:
     ) -> UnifiedResult:
         """
         Just run AI Hedge Fund signal generation.
-
-        Note: This would call the actual AI Hedge Fund. For now,
-        returns a placeholder showing the integration point.
         """
         print(f"  [AI Hedge Fund] Generating signal for {ticker}...")
 
-        # Placeholder - integrate with actual AI Hedge Fund
-        # from src.main import run_hedge_fund
-        # hf_result = run_hedge_fund(...)
+        signal, confidence, agent_signals, raw_result = self._run_hedge_fund(ticker, analysts)
+
+        # Build recommendations from the decision
+        recommendations = []
+        decisions = raw_result.get('decisions', {})
+        if decisions and ticker in decisions:
+            decision = decisions[ticker]
+            action = decision.get('action', 'hold')
+            quantity = decision.get('quantity', 0)
+            recommendations.append(f"Recommended action: {action.upper()} {quantity} shares")
+            recommendations.append(decision.get('reasoning', ''))
 
         return UnifiedResult(
             ticker=ticker,
-            signal="NEUTRAL",
-            confidence=50.0,
-            agent_signals=[
-                AgentSignal(
-                    agent_name="Placeholder",
-                    signal="NEUTRAL",
-                    confidence=50.0,
-                    reasoning="Connect to actual AI Hedge Fund for real signals"
-                )
-            ],
-            recommendations=[
-                "Integration point: Call run_hedge_fund() from src/main.py",
-                "Pass analysts parameter to select specific agents"
-            ]
+            signal=signal,
+            confidence=confidence,
+            agent_signals=agent_signals,
+            recommendations=recommendations
         )
 
     def _research_only(
@@ -295,25 +404,25 @@ class UnifiedWorkflow:
 
         # Step 2: AI Hedge Fund with research context
         print(f"  [AI Hedge Fund] Analyzing {ticker} with research context...")
-        # TODO: Pass research.answer as context to agents
+        signal, confidence, agent_signals, raw_result = self._run_hedge_fund(ticker, analysts)
+
+        # Build recommendations
+        recommendations = []
+        decisions = raw_result.get('decisions', {})
+        if decisions and ticker in decisions:
+            decision = decisions[ticker]
+            action = decision.get('action', 'hold')
+            quantity = decision.get('quantity', 0)
+            recommendations.append(f"Recommended action: {action.upper()} {quantity} shares")
+            recommendations.append(decision.get('reasoning', ''))
 
         return UnifiedResult(
             ticker=ticker,
-            signal="NEUTRAL",
-            confidence=50.0,
-            agent_signals=[
-                AgentSignal(
-                    agent_name="Pre-Research Flow",
-                    signal="NEUTRAL",
-                    confidence=50.0,
-                    reasoning="Signal generation with Mazo research context"
-                )
-            ],
+            signal=signal,
+            confidence=confidence,
+            agent_signals=agent_signals,
             research_report=research.answer,
-            recommendations=[
-                "Pre-research complete",
-                "Integration: Pass research to AI Hedge Fund agents as context"
-            ]
+            recommendations=recommendations
         )
 
     def _post_research_flow(
@@ -325,11 +434,13 @@ class UnifiedWorkflow:
         """AI Hedge Fund first, then Mazo explains"""
         # Step 1: AI Hedge Fund signal
         print(f"  [AI Hedge Fund] Generating signal for {ticker}...")
+        signal, confidence, agent_signals, raw_result = self._run_hedge_fund(ticker, analysts)
 
-        # Placeholder signal - replace with actual AI Hedge Fund call
-        signal = "BEARISH"
-        confidence = 72.0
-        reasoning = "Trading above intrinsic value"
+        # Get the portfolio manager's reasoning for Mazo to explain
+        decisions = raw_result.get('decisions', {})
+        reasoning = "Signal generated by multi-agent analysis"
+        if decisions and ticker in decisions:
+            reasoning = decisions[ticker].get('reasoning', reasoning)
 
         # Step 2: Mazo explains the signal
         print(f"  [Mazo] Explaining {signal} signal...")
@@ -340,23 +451,23 @@ class UnifiedWorkflow:
             reasoning=reasoning
         )
 
+        # Build recommendations
+        recommendations = []
+        if decisions and ticker in decisions:
+            decision = decisions[ticker]
+            action = decision.get('action', 'hold')
+            quantity = decision.get('quantity', 0)
+            recommendations.append(f"Recommended action: {action.upper()} {quantity} shares")
+        recommendations.append(f"Signal: {signal} with {confidence:.0f}% confidence")
+        recommendations.append("See research report for detailed explanation")
+
         return UnifiedResult(
             ticker=ticker,
             signal=signal,
             confidence=confidence,
-            agent_signals=[
-                AgentSignal(
-                    agent_name="Post-Research Flow",
-                    signal=signal,
-                    confidence=confidence,
-                    reasoning=reasoning
-                )
-            ],
+            agent_signals=agent_signals,
             research_report=research.answer,
-            recommendations=[
-                f"Signal: {signal} with {confidence}% confidence",
-                "See research report for detailed explanation"
-            ]
+            recommendations=recommendations
         )
 
     def _full_flow(
@@ -372,10 +483,13 @@ class UnifiedWorkflow:
 
         # Step 2: AI Hedge Fund with context
         print(f"  [AI Hedge Fund] Analyzing {ticker}...")
-        # Placeholder - replace with actual AI Hedge Fund
-        signal = "NEUTRAL"
-        confidence = 50.0
-        reasoning = "Placeholder signal"
+        signal, confidence, agent_signals, raw_result = self._run_hedge_fund(ticker, analysts)
+
+        # Get the portfolio manager's reasoning for Mazo to explain
+        decisions = raw_result.get('decisions', {})
+        reasoning = "Signal generated by multi-agent analysis"
+        if decisions and ticker in decisions:
+            reasoning = decisions[ticker].get('reasoning', reasoning)
 
         # Step 3: Mazo deep dive on signal
         print(f"  [Mazo] Deep dive on signal...")
@@ -399,24 +513,23 @@ class UnifiedWorkflow:
 {deep_research.answer}
 """
 
+        # Build recommendations
+        recommendations = []
+        if decisions and ticker in decisions:
+            decision = decisions[ticker]
+            action = decision.get('action', 'hold')
+            quantity = decision.get('quantity', 0)
+            recommendations.append(f"Recommended action: {action.upper()} {quantity} shares")
+        recommendations.append(f"Signal: {signal} with {confidence:.0f}% confidence")
+        recommendations.append("Full workflow completed with pre and post research")
+
         return UnifiedResult(
             ticker=ticker,
             signal=signal,
             confidence=confidence,
-            agent_signals=[
-                AgentSignal(
-                    agent_name="Full Workflow",
-                    signal=signal,
-                    confidence=confidence,
-                    reasoning="Complete pre + post research flow"
-                )
-            ],
+            agent_signals=agent_signals,
             research_report=full_report,
-            recommendations=[
-                "Full workflow completed",
-                "Pre-research informed the signal",
-                "Post-research explained the decision"
-            ]
+            recommendations=recommendations
         )
 
     def _build_research_query(self, ticker: str, depth: ResearchDepth) -> str:
