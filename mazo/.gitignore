@@ -57,3 +57,6 @@ yarn-error.log*
 
 # Mazo context files
 .mazo/
+
+# Query cache
+queries/

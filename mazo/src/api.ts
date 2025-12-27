@@ -5,10 +5,15 @@
  * Usage: bun run src/api.ts --query "Your question" [--model claude-sonnet-4-5-20250929]
  */
 import { config } from 'dotenv';
+import { resolve, dirname } from 'path';
+import { fileURLToPath } from 'url';
 import { Agent } from './agent/orchestrator.js';
 import { DEFAULT_MODEL } from './model/llm.js';
 
-// Load environment variables
+// Load environment variables from parent directory (shared with ai-hedge-fund)
+const __dirname = dirname(fileURLToPath(import.meta.url));
+config({ path: resolve(__dirname, '../../.env'), quiet: true });
+// Also try loading from current directory as fallback
 config({ quiet: true });
 
 interface ApiResult {

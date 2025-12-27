@@ -168,10 +168,10 @@ main();
 
     def research(self, query: str) -> MazoResponse:
         """
-        Send a research query to Mazo.
+        Send a research query to Mazo via the API mode.
 
-        This is a simplified implementation that captures Mazo's
-        research capabilities through direct function calls.
+        Calls Mazo's api.ts which runs the agent non-interactively
+        and returns JSON output.
 
         Args:
             query: Natural language research question
@@ -182,41 +182,69 @@ main();
         start_time = time.time()
 
         try:
-            # For now, we'll use a simpler approach: run Mazo with echo
-            # and capture any output. Full integration would require
-            # modifying Mazo to accept piped input.
+            # Call Mazo's API mode directly
+            api_script = Path(self.mazo_path) / "src" / "api.ts"
 
-            # Create query file
-            query_file = Path(self.mazo_path) / "queries"
-            query_file.mkdir(exist_ok=True)
-
-            query_path = query_file / f"query_{int(time.time())}.json"
-            result_path = query_file / f"result_{int(time.time())}.json"
-
-            with open(query_path, "w") as f:
-                json.dump({
-                    "query": query,
-                    "model": self.model,
-                    "timestamp": datetime.now().isoformat()
-                }, f)
-
-            # Note: Full implementation would require Mazo modifications
-            # to support non-interactive mode. For now, return a placeholder
-            # that indicates the bridge is working.
+            result = subprocess.run(
+                [
+                    self.bun_path, "run", str(api_script),
+                    "--query", query,
+                    "--model", self.model
+                ],
+                cwd=self.mazo_path,
+                capture_output=True,
+                text=True,
+                timeout=self.timeout,
+                env={**os.environ, "FORCE_COLOR": "0"}  # Disable colors
+            )
 
             execution_time = time.time() - start_time
 
-            return MazoResponse(
-                query=query,
-                answer=self._generate_placeholder_response(query),
-                tasks_completed=["Query parsed", "Research initiated"],
-                data_sources=["Financial Datasets API"],
-                confidence=0.75,
-                execution_time=execution_time,
-                raw_output="",
-                success=True,
-                error=None
-            )
+            # Parse JSON response from Mazo
+            try:
+                response_json = json.loads(result.stdout.strip())
+            except json.JSONDecodeError:
+                # If JSON parsing fails, check if there's useful output
+                if result.stderr:
+                    return MazoResponse(
+                        query=query,
+                        answer="",
+                        success=False,
+                        error=f"Mazo error: {result.stderr[:500]}",
+                        execution_time=execution_time,
+                        raw_output=result.stdout
+                    )
+                return MazoResponse(
+                    query=query,
+                    answer="",
+                    success=False,
+                    error=f"Failed to parse Mazo response: {result.stdout[:500]}",
+                    execution_time=execution_time,
+                    raw_output=result.stdout
+                )
+
+            # Map Mazo API response to MazoResponse
+            if response_json.get("success"):
+                return MazoResponse(
+                    query=query,
+                    answer=response_json.get("answer", ""),
+                    tasks_completed=["Research complete"],
+                    data_sources=response_json.get("sources", ["Financial Datasets API"]),
+                    confidence=response_json.get("confidence", 85) / 100,
+                    execution_time=execution_time,
+                    raw_output=result.stdout,
+                    success=True,
+                    error=None
+                )
+            else:
+                return MazoResponse(
+                    query=query,
+                    answer="",
+                    success=False,
+                    error=response_json.get("error", "Unknown error from Mazo"),
+                    execution_time=execution_time,
+                    raw_output=result.stdout
+                )
 
         except subprocess.TimeoutExpired:
             return MazoResponse(
